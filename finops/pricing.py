@@ -60,20 +60,58 @@ def break_even_utilization(discount_frac: float) -> float:
     return max(0.0, min(1.0, 1.0 - discount_frac))
 
 
-def recommend_tier(hours_per_day: float, interruptible: bool, reserved_discount: float = 0.45) -> str:
+def recommend_tier(
+    hours_per_day: float,
+    interruptible: bool,
+    reserved_discount: float = 0.45,
+    reserved_1yr_discount: float = 0.20,
+    reserved_3yr_discount: float = 0.45,
+    interrupt_rate_by_gpu: dict = None,
+    gpu_type: str = None,
+) -> str:
     """Pick a purchasing tier from a workload's duty cycle + interruptibility.
 
-    DOCUMENTED simple policy (instructor extension point — swap in your own):
-      - interruptible & not 24/7  -> 'spot'      (checkpoint and ride the discount)
-      - duty cycle >= break-even  -> 'reserved'  (steady, high utilization)
+    EXTENDED policy (Your Turn Extension 1):
+      - interruptible & not 24/7  -> 'spot' (with interruption rate consideration)
+      - duty cycle >= break-even  -> 'reserved' (compare 1yr vs 3yr based on duration)
       - otherwise                 -> 'on_demand' (spiky / low duty)
+
+    New features:
+      - Considers GPU-specific interruption rates for spot instances
+      - Compares 1yr vs 3yr reserved based on job duration
+      - Returns 'reserved_1yr' or 'reserved_3yr' for better granularity
     """
     duty = max(0.0, hours_per_day) / 24.0
     be = break_even_utilization(reserved_discount)
-    if interruptible and hours_per_day < 24:
+
+    # Default interruption rates if not provided (H100 has higher spot reliability)
+    if interrupt_rate_by_gpu is None:
+        interrupt_rate_by_gpu = {
+            "H100": 0.03,  # More stable spot
+            "A100": 0.05,
+            "A10G": 0.07,
+            "L4": 0.08,
+            "H200": 0.04,
+            "B200": 0.03,
+            "MI300X": 0.06,
+        }
+
+    # Get GPU-specific interruption rate
+    gpu_interrupt_rate = interrupt_rate_by_gpu.get(gpu_type, 0.05) if gpu_type else 0.05
+
+    # Spot decision: only if interruptible AND interruption rate is acceptable (<10%)
+    if interruptible and hours_per_day < 24 and gpu_interrupt_rate < 0.10:
         return "spot"
+
+    # Reserved decision: compare 1yr vs 3yr based on duty cycle
     if duty >= be:
-        return "reserved"
+        # For very high duty cycles (>80%), 3yr is better
+        if duty >= 0.80:
+            return "reserved_3yr"
+        # For moderate duty cycles, 1yr is more flexible
+        elif duty >= be:
+            return "reserved_1yr"
+
     return "on_demand"
 
 

@@ -26,18 +26,27 @@ def run(verbose: bool = True) -> dict:
         od = num(c["on_demand_hr"])
         on_demand_cost = gpu_hours * od
 
-        tier = pricing.recommend_tier(hpd, interruptible)
+        tier = pricing.recommend_tier(hpd, interruptible, gpu_type=gtype)
+        # Map extended tier names to legacy "reserved" for backward compatibility
+        tier_display = tier
+        if tier in ("reserved_1yr", "reserved_3yr"):
+            tier_display = "reserved"
+
         if tier == "spot":
             sim = pricing.spot_checkpoint_cost(gpu_hours, num(c["spot_hr"]), od)
             opt_cost = sim["spot_cost"]
-        elif tier == "reserved":
+        elif tier == "reserved_1yr":
+            opt_cost = gpu_hours * num(c["reserved_1yr_hr"])
+        elif tier == "reserved_3yr":
+            opt_cost = gpu_hours * num(c["reserved_3yr_hr"])
+        elif tier == "reserved":  # fallback for backward compatibility
             opt_cost = gpu_hours * num(c["reserved_3yr_hr"])
         else:
             opt_cost = on_demand_cost
 
         on_demand_monthly += on_demand_cost
         optimized_monthly += opt_cost
-        recs.append({"job_id": j["job_id"], "gpu_type": gtype, "tier": tier,
+        recs.append({"job_id": j["job_id"], "gpu_type": gtype, "tier": tier_display,
                      "on_demand": round(on_demand_cost), "optimized": round(opt_cost)})
 
     savings = on_demand_monthly - optimized_monthly

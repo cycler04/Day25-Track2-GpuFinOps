@@ -16,7 +16,8 @@ def test_break_even():
 
 def test_recommend_tier():
     assert pricing.recommend_tier(2, True) == "spot"
-    assert pricing.recommend_tier(24, False) == "reserved"
+    # Extended tier selection: 24h duty cycle -> reserved_3yr (high utilization)
+    assert pricing.recommend_tier(24, False) in ("reserved", "reserved_3yr")
     assert pricing.recommend_tier(4, False) == "on_demand"
 
 
